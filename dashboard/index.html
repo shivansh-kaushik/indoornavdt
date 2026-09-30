@@ -1,0 +1,1492 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>IndoorNav — 3D Building & Navigation Viewer</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" />
+
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:        #080d14;
+      --surface:   rgba(255,255,255,0.04);
+      --surface-hover: rgba(255,255,255,0.08);
+      --border:    rgba(255,255,255,0.09);
+      --border-light: rgba(255,255,255,0.18);
+      --accent:    #00c8ff;
+      --accent2:   #7c5cfc;
+      --success:   #10b981;
+      --warning:   #f59e0b;
+      --danger:    #f72585;
+      --text:      #e2e8f0;
+      --muted:     #64748b;
+      --sidebar-w: 320px;
+      --topbar-h:  52px;
+      --bar-h:     40px;
+    }
+
+    html, body { width:100%; height:100%; overflow:hidden; background:var(--bg); font-family:'Inter',sans-serif; color:var(--text); }
+
+    /* ── LAYOUT ─────────────────────────────────────────────── */
+    #app { display:grid; grid-template-columns:var(--sidebar-w) 1fr; grid-template-rows:var(--topbar-h) 1fr var(--bar-h); height:100vh; }
+
+    /* ── TOP BAR ────────────────────────────────────────────── */
+    #topbar {
+      grid-column:1/-1;
+      display:flex; align-items:center; gap:12px;
+      padding:0 20px;
+      background:rgba(8,13,20,0.92);
+      border-bottom:1px solid var(--border);
+      backdrop-filter:blur(12px);
+      z-index:10;
+    }
+    #topbar .logo {
+      display:flex; align-items:center; gap:8px;
+      font-size:14px; font-weight:700; letter-spacing:.5px;
+    }
+    #topbar .logo span { color:var(--accent); }
+    #topbar .logo svg { width:22px; height:22px; }
+    #filename { font-family:'JetBrains Mono',monospace; font-size:12px; color:var(--muted); flex:1; white-space:nowrap; overflow:hidden; text-overflow:ellipsis; }
+    #topbar .tag { font-size:10px; font-weight:600; padding:3px 8px; border-radius:4px; text-transform:uppercase; letter-spacing:.6px; }
+    .tag-ifc  { background:rgba(0,200,255,0.15); color:var(--accent); border:1px solid rgba(0,200,255,0.3); }
+    .tag-glb  { background:rgba(124,92,252,0.15); color:var(--accent2); border:1px solid rgba(124,92,252,0.3); }
+    .tag-graph{ background:rgba(16,185,129,0.15); color:var(--success); border:1px solid rgba(16,185,129,0.3); }
+    #fps-display { font-family:'JetBrains Mono',monospace; font-size:11px; color:var(--muted); min-width:55px; text-align:right; }
+
+    /* TOP BAR BUTTONS */
+    .tb-btn {
+      display:flex; align-items:center; gap:5px;
+      padding:5px 12px; border-radius:6px; font-size:11px; font-weight:500;
+      cursor:pointer; border:1px solid var(--border);
+      background:var(--surface); color:var(--text);
+      transition:all .15s; white-space:nowrap;
+    }
+    .tb-btn:hover { background:var(--surface-hover); border-color:var(--border-light); }
+    .tb-btn.active { background:rgba(0,200,255,0.15); border-color:var(--accent); color:var(--accent); }
+    .tb-sep { width:1px; height:20px; background:var(--border); flex-shrink:0; }
+
+    /* ── SIDEBAR ────────────────────────────────────────────── */
+    #sidebar {
+      background:rgba(8,13,20,0.88);
+      border-right:1px solid var(--border);
+      backdrop-filter:blur(12px);
+      overflow-y:auto; overflow-x:hidden;
+      padding:12px;
+      display:flex; flex-direction:column; gap:12px;
+      scrollbar-width:thin; scrollbar-color:var(--border) transparent;
+    }
+
+    .panel {
+      background:var(--surface);
+      border:1px solid var(--border);
+      border-radius:10px;
+      overflow:hidden;
+    }
+    .panel-header {
+      display:flex; align-items:center; justify-content:space-between;
+      padding:9px 12px;
+      font-size:10px; font-weight:600; text-transform:uppercase; letter-spacing:.8px;
+      color:var(--muted);
+      border-bottom:1px solid var(--border);
+      cursor:pointer; user-select:none;
+    }
+    .panel-header:hover { color:var(--text); }
+    .panel-body { padding:10px 12px; }
+
+    /* stats grid */
+    .stats-grid { display:grid; grid-template-columns:1fr 1fr; gap:8px; }
+    .stat-card { background:rgba(255,255,255,0.04); border:1px solid var(--border); border-radius:7px; padding:8px 10px; }
+    .stat-val { font-size:18px; font-weight:700; color:var(--accent); font-family:'JetBrains Mono',monospace; }
+    .stat-lbl { font-size:9px; text-transform:uppercase; letter-spacing:.6px; color:var(--muted); margin-top:2px; }
+
+    /* form elements */
+    .form-group { margin-bottom:10px; }
+    .form-label { font-size:10px; font-weight:600; text-transform:uppercase; letter-spacing:.6px; color:var(--muted); margin-bottom:4px; display:block; }
+    .form-select, .form-input {
+      width:100%; padding:7px 10px; background:rgba(0,0,0,0.3);
+      border:1px solid var(--border); border-radius:6px;
+      color:var(--text); font-size:11px; font-family:'Inter',sans-serif;
+      outline:none; transition:.15s;
+    }
+    .form-select:focus, .form-input:focus { border-color:var(--accent); }
+
+    /* control buttons */
+    .ctrl-btn {
+      width:100%; padding:7px 12px; border-radius:7px; font-size:11px; font-weight:500;
+      cursor:pointer; border:1px solid var(--border); background:var(--surface);
+      color:var(--text); transition:.15s; text-align:left;
+      display:flex; align-items:center; gap:7px; margin-bottom:5px;
+    }
+    .ctrl-btn:hover { background:var(--surface-hover); border-color:var(--border-light); }
+    .ctrl-btn.active { background:rgba(0,200,255,0.12); border-color:rgba(0,200,255,0.5); color:var(--accent); }
+    .ctrl-btn.primary { background:rgba(0,200,255,0.18); border-color:var(--accent); color:var(--accent); justify-content:center; font-weight:600; }
+    .ctrl-btn.primary:hover { background:rgba(0,200,255,0.28); }
+    .ctrl-btn.success { background:rgba(16,185,129,0.15); border-color:var(--success); color:var(--success); justify-content:center; font-weight:600; }
+    .ctrl-btn.success:hover { background:rgba(16,185,129,0.25); }
+
+    /* layer toggle checkbox */
+    .layer-row { display:flex; align-items:center; justify-content:space-between; padding:5px 4px; font-size:11px; border-bottom:1px solid rgba(255,255,255,0.03); }
+    .layer-row:last-child { border:none; }
+    .layer-left { display:flex; align-items:center; gap:8px; }
+    .node-icon { width:12px; height:12px; display:inline-block; border-radius:2px; }
+    .chk-box { cursor:pointer; accent-color:var(--accent); }
+
+    /* floor toggles */
+    #floor-list { display:flex; flex-direction:column; gap:4px; }
+    .floor-row { display:flex; align-items:center; gap:8px; font-size:11px; padding:5px 6px; cursor:pointer; border-radius:4px; transition:.12s; }
+    .floor-row:hover { background:rgba(255,255,255,0.05); }
+    .floor-toggle { width:28px; height:16px; background:rgba(255,255,255,0.1); border-radius:8px; position:relative; transition:.2s; flex-shrink:0; }
+    .floor-toggle.on { background:rgba(0,200,255,0.4); }
+    .floor-toggle::after { content:''; position:absolute; top:2px; left:2px; width:12px; height:12px; border-radius:6px; background:white; transition:.2s; }
+    .floor-toggle.on::after { left:14px; }
+
+    /* route steps */
+    #route-steps-container { max-height:180px; overflow-y:auto; margin-top:8px; display:flex; flex-direction:column; gap:4px; font-size:10px; }
+    .step-item { display:flex; align-items:flex-start; gap:6px; padding:5px 8px; background:rgba(0,0,0,0.25); border-radius:5px; border-left:2px solid var(--accent); }
+    .step-badge { font-weight:700; color:var(--accent); font-family:'JetBrains Mono',monospace; min-width:18px; }
+    .step-desc { flex:1; }
+    .step-dist { color:var(--muted); font-family:'JetBrains Mono',monospace; }
+
+    /* ── VIEWPORT ───────────────────────────────────────────── */
+    #viewport { position:relative; background:#050a11; overflow:hidden; }
+    #canvas { display:block; width:100% !important; height:100% !important; }
+
+    /* drop overlay */
+    #drop-overlay {
+      position:absolute; inset:0;
+      display:flex; flex-direction:column; align-items:center; justify-content:center;
+      gap:16px;
+      background:radial-gradient(ellipse at 50% 40%, rgba(0,200,255,0.05) 0%, transparent 70%),
+                 linear-gradient(135deg, #080d14 0%, #0c1420 100%);
+      z-index:5; pointer-events:none; transition:opacity .3s;
+    }
+    #drop-overlay.hidden { opacity:0; pointer-events:none; }
+    .drop-icon { width:68px; height:68px; border-radius:18px; background:rgba(0,200,255,0.08); border:1.5px dashed rgba(0,200,255,0.4); display:flex; align-items:center; justify-content:center; animation:float 3s ease-in-out infinite; }
+    @keyframes float { 0%,100%{transform:translateY(0)} 50%{transform:translateY(-6px)} }
+    .drop-icon svg { width:32px; height:32px; color:var(--accent); }
+    .drop-title { font-size:16px; font-weight:700; color:var(--text); }
+    .drop-sub { font-size:11px; color:var(--muted); text-align:center; max-width:320px; }
+    .drop-formats { display:flex; gap:8px; margin-top:2px; }
+    .fmt-tag { font-size:9px; font-weight:600; padding:3px 8px; border-radius:4px; text-transform:uppercase; letter-spacing:.5px; }
+    .fmt-obj { background:rgba(0,200,255,0.1); color:var(--accent); border:1px solid rgba(0,200,255,0.3); }
+    .fmt-glb { background:rgba(124,92,252,0.1); color:var(--accent2); border:1px solid rgba(124,92,252,0.3); }
+    .fmt-json{ background:rgba(16,185,129,0.1); color:var(--success); border:1px solid rgba(16,185,129,0.3); }
+    .drop-btn { margin-top:8px; padding:8px 20px; border-radius:8px; font-size:11px; font-weight:600; cursor:pointer; border:1px solid rgba(0,200,255,0.4); background:rgba(0,200,255,0.1); color:var(--accent); transition:.15s; pointer-events:all; }
+    .drop-btn:hover { background:rgba(0,200,255,0.2); }
+
+    /* loading bar */
+    #loading-bar-wrap { position:absolute; bottom:0; left:0; right:0; height:3px; z-index:20; display:none; }
+    #loading-bar { height:100%; width:0; background:linear-gradient(90deg,var(--accent2),var(--accent)); transition:width .3s; }
+    #loading-text { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); font-size:12px; color:var(--accent); display:none; letter-spacing:.5px; background:rgba(8,13,20,0.85); padding:8px 20px; border-radius:20px; border:1px solid var(--border); }
+
+    /* walk mode overlays */
+    #crosshair { position:absolute; top:50%; left:50%; transform:translate(-50%,-50%); display:none; pointer-events:none; z-index:20; }
+    #crosshair::before,#crosshair::after { content:''; position:absolute; background:rgba(255,255,255,0.8); }
+    #crosshair::before { width:14px; height:1.5px; top:-.75px; left:-7px; }
+    #crosshair::after  { width:1.5px; height:14px; top:-7px; left:-.75px; }
+    #walk-overlay { position:absolute; inset:0; display:none; border:2px solid rgba(124,92,252,0.4); pointer-events:none; z-index:15; }
+    #walk-label { position:absolute; bottom:60px; left:50%; transform:translateX(-50%); font-size:11px; color:var(--accent2); background:rgba(124,92,252,0.15); border:1px solid rgba(124,92,252,0.4); padding:5px 14px; border-radius:20px; display:none; z-index:20; pointer-events:none; }
+    #collision-indicator { position:absolute; top:20px; left:50%; transform:translateX(-50%); font-size:11px; font-weight:700; color:var(--danger); background:rgba(247,37,133,0.15); border:1px solid rgba(247,37,133,0.5); padding:6px 16px; border-radius:20px; display:none; z-index:30; pointer-events:none; animation:blink 0.3s infinite alternate; }
+    @keyframes blink { 0% { opacity:0.6; } 100% { opacity:1.0; } }
+
+    /* Follow Route HUD */
+    #follow-hud {
+      position:absolute; top:20px; right:20px; width:280px;
+      background:rgba(8,13,20,0.92); border:1px solid var(--accent);
+      border-radius:10px; padding:12px; box-shadow:0 8px 32px rgba(0,0,0,0.6);
+      z-index:25; display:none; backdrop-filter:blur(10px);
+    }
+    #follow-hud .hud-title { font-size:9px; text-transform:uppercase; letter-spacing:.8px; color:var(--accent); font-weight:700; margin-bottom:4px; }
+    #follow-hud .hud-instruction { font-size:13px; font-weight:600; color:#fff; margin-bottom:6px; line-height:1.3; }
+    #follow-hud .hud-sub { display:flex; justify-content:space-between; font-size:10px; color:var(--muted); font-family:'JetBrains Mono',monospace; }
+
+    /* ── BOTTOM BAR ─────────────────────────────────────────── */
+    #bottombar {
+      grid-column:1/-1;
+      display:flex; align-items:center; gap:16px;
+      padding:0 20px;
+      background:rgba(8,13,20,0.92);
+      border-top:1px solid var(--border);
+      font-size:10px; color:var(--muted);
+    }
+    .hint { display:flex; align-items:center; gap:5px; }
+    kbd { background:rgba(255,255,255,0.07); border:1px solid var(--border); border-radius:3px; padding:1px 5px; font-family:'JetBrains Mono',monospace; font-size:9px; color:var(--text); }
+    #coord-display { font-family:'JetBrains Mono',monospace; font-size:10px; margin-left:auto; color:var(--muted); }
+  </style>
+</head>
+
+<body>
+<div id="app">
+
+  <!-- TOP BAR -->
+  <header id="topbar">
+    <div class="logo">
+      <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8">
+        <polygon points="12,2 22,8.5 22,15.5 12,22 2,15.5 2,8.5" stroke="var(--accent)"/>
+        <polyline points="12,2 12,22" stroke="var(--accent)" opacity=".5"/>
+        <polyline points="2,8.5 22,8.5" stroke="var(--accent)" opacity=".5"/>
+      </svg>
+      <div>Indoor<span>Nav</span></div>
+    </div>
+
+    <div id="filename">Drop a 3D model (.glb/.obj) or nav_graph.json</div>
+    <div id="schema-tag" style="display:none"></div>
+    <div id="graph-tag" class="tag tag-graph" style="display:none">Graph Active</div>
+    <div class="tb-sep"></div>
+
+    <button class="tb-btn" onclick="document.getElementById('file-input').click()">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+      Open File
+    </button>
+
+    <button class="tb-btn" id="load-default-graph-btn" onclick="loadDefaultGraph()" title="Auto-load outputs/nav_graph.json">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+      Load Graph
+    </button>
+
+    <div class="tb-sep"></div>
+
+    <button class="tb-btn" id="wireframe-btn" onclick="toggleWireframe()">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/><line x1="3" y1="9" x2="21" y2="9"/><line x1="3" y1="15" x2="21" y2="15"/><line x1="9" y1="3" x2="9" y2="21"/><line x1="15" y1="3" x2="15" y2="21"/></svg>
+      Wireframe
+    </button>
+
+    <button class="tb-btn" id="autorotate-btn" onclick="toggleAutoRotate()">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="23 4 23 10 17 10"/><path d="M20.49 15a9 9 0 11-2.12-9.36L23 10"/></svg>
+      Auto Rotate
+    </button>
+
+    <button class="tb-btn active" id="axisfix-btn" onclick="toggleAxisFix()" title="IFC uses Z-up; toggle to correct orientation">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="12" y1="20" x2="12" y2="4"/><polyline points="6 10 12 4 18 10"/></svg>
+      IFC Z→Y Fix
+    </button>
+
+    <button class="tb-btn" onclick="resetCamera()">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M12 1v4M12 19v4M4.22 4.22l2.83 2.83M16.95 16.95l2.83 2.83M1 12h4M19 12h4M4.22 19.78l2.83-2.83M16.95 7.05l2.83-2.83"/></svg>
+      Reset View
+    </button>
+
+    <button class="tb-btn" onclick="takeScreenshot()">
+      <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M23 19a2 2 0 01-2 2H3a2 2 0 01-2-2V8a2 2 0 012-2h4l2-3h6l2 3h4a2 2 0 012 2z"/><circle cx="12" cy="13" r="4"/></svg>
+      Screenshot
+    </button>
+
+    <div class="tb-sep"></div>
+    <div id="fps-display">-- FPS</div>
+  </header>
+
+  <!-- SIDEBAR -->
+  <aside id="sidebar">
+
+    <!-- 1. Route Navigation Panel -->
+    <div class="panel">
+      <div class="panel-header">Navigation &amp; Routing</div>
+      <div class="panel-body">
+        <div class="form-group">
+          <label class="form-label">Start Point</label>
+          <select id="route-start-select" class="form-select">
+            <option value="">-- Select Start Space --</option>
+          </select>
+        </div>
+        <div class="form-group">
+          <label class="form-label">Destination</label>
+          <select id="route-dest-select" class="form-select">
+            <option value="">-- Select Destination Space --</option>
+          </select>
+        </div>
+
+        <button class="ctrl-btn primary" onclick="calculateRoute()">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="3 11 22 2 13 21 11 13 3 11"/></svg>
+          Calculate Route (A*)
+        </button>
+        <button class="ctrl-btn" id="follow-route-btn" onclick="toggleFollowRoute()" style="display:none;">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="5 3 19 12 5 21 5 3"/></svg>
+          Follow Route (Auto-Walk)
+        </button>
+        <button class="ctrl-btn" onclick="clearRoute()" id="clear-route-btn" style="display:none;">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><line x1="18" y1="6" x2="6" y2="18"/><line x1="6" y1="6" x2="18" y2="18"/></svg>
+          Clear Route
+        </button>
+
+        <div id="route-metrics" style="display:none; margin-top:8px; padding-top:8px; border-top:1px solid var(--border);">
+          <div class="stats-grid">
+            <div class="stat-card">
+              <div class="stat-val" id="metric-dist">0.0m</div>
+              <div class="stat-lbl">Distance</div>
+            </div>
+            <div class="stat-card">
+              <div class="stat-val" id="metric-eta">0s</div>
+              <div class="stat-lbl">Est. Time</div>
+            </div>
+          </div>
+          <div id="route-steps-container"></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- 2. Graph Layers & Debug Toggles -->
+    <div class="panel">
+      <div class="panel-header">Graph Layers &amp; Debug</div>
+      <div class="panel-body">
+        <div class="layer-row">
+          <div class="layer-left"><span class="node-icon" style="background:#00c8ff;"></span><span>Corridor Nodes (●)</span></div>
+          <input type="checkbox" id="layer-nodes" class="chk-box" checked onchange="toggleGraphLayer('nodes', this.checked)">
+        </div>
+        <div class="layer-row">
+          <div class="layer-left"><span class="node-icon" style="background:#3b82f6;"></span><span>Room Nodes (□)</span></div>
+          <input type="checkbox" id="layer-rooms" class="chk-box" checked onchange="toggleGraphLayer('rooms', this.checked)">
+        </div>
+        <div class="layer-row">
+          <div class="layer-left"><span class="node-icon" style="background:#f97316;"></span><span>Doors &amp; Gates (◇)</span></div>
+          <input type="checkbox" id="layer-doors" class="chk-box" checked onchange="toggleGraphLayer('doors', this.checked)">
+        </div>
+        <div class="layer-row">
+          <div class="layer-left"><span class="node-icon" style="background:#eab308;"></span><span>Stairs &amp; Lifts (▲)</span></div>
+          <input type="checkbox" id="layer-stairs" class="chk-box" checked onchange="toggleGraphLayer('stairs', this.checked)">
+        </div>
+        <div class="layer-row">
+          <div class="layer-left"><span class="node-icon" style="background:#64748b;"></span><span>Walking Edges</span></div>
+          <input type="checkbox" id="layer-edges" class="chk-box" checked onchange="toggleGraphLayer('edges', this.checked)">
+        </div>
+        <div class="layer-row">
+          <div class="layer-left"><span class="node-icon" style="background:#10b981;"></span><span>Calculated Route</span></div>
+          <input type="checkbox" id="layer-route" class="chk-box" checked onchange="toggleGraphLayer('route', this.checked)">
+        </div>
+        <div class="layer-row">
+          <div class="layer-left"><span class="node-icon" style="background:#CCBFa6;"></span><span>Walls Visible</span></div>
+          <input type="checkbox" id="layer-walls" class="chk-box" checked onchange="toggleGraphLayer('walls', this.checked)">
+        </div>
+
+        <div class="form-group" style="margin-top:10px;">
+          <label class="form-label">Floor Filter</label>
+          <select id="floor-filter-select" class="form-select" onchange="filterFloorView(this.value)">
+            <option value="all">All Floors</option>
+          </select>
+        </div>
+      </div>
+    </div>
+
+    <!-- 3. Virtual Walk & Views -->
+    <div class="panel">
+      <div class="panel-header">Virtual Walk &amp; Views</div>
+      <div class="panel-body">
+        <button class="ctrl-btn" id="walk-btn" onclick="toggleWalkMode()">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="5" r="2"/><path d="M12 22v-7l-2-5 3 2 3-2-2 5v7"/><path d="M5 12l2-1 3 2"/><path d="M19 12l-2-1-3 2"/></svg>
+          Walk Mode (WASD + Collision)
+        </button>
+        <button class="ctrl-btn" onclick="setView('top')">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="16"/><line x1="8" y1="12" x2="16" y2="12"/></svg>
+          Top View
+        </button>
+        <button class="ctrl-btn" onclick="setView('front')">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="3" y="3" width="18" height="18" rx="2"/></svg>
+          Front View
+        </button>
+        <button class="ctrl-btn" onclick="setView('iso')">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polygon points="12,2 22,8.5 22,15.5 12,22 2,15.5 2,8.5"/></svg>
+          Isometric View
+        </button>
+      </div>
+    </div>
+
+    <!-- 4. Graph Authoring / Editor -->
+    <div class="panel">
+      <div class="panel-header">Graph Authoring Editor</div>
+      <div class="panel-body">
+        <button class="ctrl-btn" id="editor-toggle-btn" onclick="toggleGraphEditor()">
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M11 4H4a2 2 0 0 0-2 2v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2v-7"/><path d="M18.5 2.5a2.121 2.121 0 0 1 3 3L12 15l-4 1 1-4 9.5-9.5z"/></svg>
+          Enable Edit Mode
+        </button>
+
+        <div id="editor-tools" style="display:none; margin-top:8px;">
+          <div class="form-group">
+            <label class="form-label">New Node Type</label>
+            <select id="editor-node-type" class="form-select">
+              <option value="corridor">Corridor Node</option>
+              <option value="room">Room Node</option>
+              <option value="door">Door / Gate</option>
+              <option value="stair">Stair Node</option>
+              <option value="elevator">Elevator Shaft</option>
+              <option value="junction">Junction</option>
+            </select>
+          </div>
+          <div style="font-size:10px; color:var(--muted); margin-bottom:8px; line-height:1.4;">
+            - Click 3D surface to place node<br/>
+            - Click existing node to select/connect<br/>
+            - Selected: <span id="editor-selected-node" style="color:var(--accent); font-weight:600;">None</span>
+          </div>
+          <div style="display:grid; grid-template-columns:1fr 1fr; gap:6px; margin-bottom:6px;">
+            <button class="ctrl-btn" onclick="editorConnectSelected()" style="justify-content:center;">Connect</button>
+            <button class="ctrl-btn" onclick="editorDeleteSelected()" style="justify-content:center; color:var(--danger);">Delete</button>
+          </div>
+          <button class="ctrl-btn success" onclick="exportEditedGraph()">
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+            Save navigation_graph.json
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <!-- 5. Model Stats -->
+    <div class="panel">
+      <div class="panel-header">Model Stats</div>
+      <div class="panel-body">
+        <div class="stats-grid">
+          <div class="stat-card"><div class="stat-val" id="stat-elements">0</div><div class="stat-lbl">Elements</div></div>
+          <div class="stat-card"><div class="stat-val" id="stat-nodes">0</div><div class="stat-lbl">Nav Nodes</div></div>
+          <div class="stat-card"><div class="stat-val" id="stat-edges">0</div><div class="stat-lbl">Nav Edges</div></div>
+          <div class="stat-card"><div class="stat-val" id="stat-storeys">0</div><div class="stat-lbl">Storeys</div></div>
+        </div>
+      </div>
+    </div>
+
+  </aside>
+
+  <!-- MAIN 3D VIEWPORT -->
+  <main id="viewport">
+    <!-- Drop overlay -->
+    <div id="drop-overlay">
+      <div class="drop-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5"><path d="M21 15v4a2 2 0 01-2 2H5a2 2 0 01-2-2v-4"/><polyline points="17 8 12 3 7 8"/><line x1="12" y1="3" x2="12" y2="15"/></svg>
+      </div>
+      <div class="drop-title">Drop your 3D model or graph here</div>
+      <div class="drop-sub">Drag &amp; drop .glb, .obj, or outputs/nav_graph.json</div>
+      <div class="drop-formats">
+        <span class="fmt-tag fmt-glb">.GLB / .GLTF</span>
+        <span class="fmt-tag fmt-obj">.OBJ</span>
+        <span class="fmt-tag fmt-json">nav_graph.json</span>
+      </div>
+      <button class="drop-btn" onclick="document.getElementById('file-input').click()">Browse Files</button>
+    </div>
+
+    <!-- Canvas -->
+    <canvas id="canvas"></canvas>
+
+    <!-- Walk mode overlays -->
+    <div id="walk-overlay"></div>
+    <div id="crosshair"></div>
+    <div id="walk-label">WALK MODE — Press ESC to exit | Wall collision active</div>
+    <div id="collision-indicator">⚠ WALL COLLISION — MOVEMENT BLOCKED</div>
+
+    <!-- Follow Route HUD -->
+    <div id="follow-hud">
+      <div class="hud-title">Navigation In Progress</div>
+      <div class="hud-instruction" id="hud-instruction-text">Starting route...</div>
+      <div class="hud-sub">
+        <span id="hud-sub-floor">Floor 1</span>
+        <span id="hud-sub-dist">12.5 m remaining</span>
+      </div>
+    </div>
+
+    <!-- Loading -->
+    <div id="loading-text">Loading file...</div>
+    <div id="loading-bar-wrap"><div id="loading-bar"></div></div>
+  </main>
+
+  <!-- BOTTOM BAR -->
+  <footer id="bottombar">
+    <div class="hint"><kbd>LMB drag</kbd> Orbit</div>
+    <div class="hint"><kbd>RMB drag</kbd> Pan</div>
+    <div class="hint"><kbd>Scroll</kbd> Zoom</div>
+    <div class="hint"><kbd>W</kbd><kbd>A</kbd><kbd>S</kbd><kbd>D</kbd> Walk mode</div>
+    <div class="hint"><kbd>F</kbd> Fit scene</div>
+    <div class="hint"><kbd>G</kbd> Toggle grid</div>
+    <div id="coord-display">X: 0.00  Y: 0.00  Z: 0.00</div>
+  </footer>
+</div>
+
+<input type="file" id="file-input" accept=".obj,.glb,.gltf,.json" onchange="handleFileInput(this)" />
+
+<!-- Three.js via CDN -->
+<script src="https://unpkg.com/three@0.128.0/build/three.min.js"></script>
+<script src="https://unpkg.com/three@0.128.0/examples/js/controls/OrbitControls.js"></script>
+<script src="https://unpkg.com/three@0.128.0/examples/js/loaders/OBJLoader.js"></script>
+<script src="https://unpkg.com/three@0.128.0/examples/js/loaders/GLTFLoader.js"></script>
+
+<script>
+// ════════════════════════════════════════════════════════════════
+// IFC COLOR PALETTE
+// ════════════════════════════════════════════════════════════════
+const IFC_COLORS = {
+  'IfcWall':                '#CCBFa6',
+  'IfcWallStandardCase':    '#CCBFa6',
+  'IfcSlab':                '#8C8C99',
+  'IfcColumn':              '#4C8CCC',
+  'IfcBeam':                '#4073B2',
+  'IfcDoor':                '#BF8040',
+  'IfcWindow':              '#80CCE6',
+  'IfcRoof':                '#A65950',
+  'IfcStair':               '#B29966',
+  'IfcStairFlight':         '#B29966',
+  'IfcRailing':             '#707070',
+  'IfcFurnishingElement':   '#D9B28C',
+  'IfcCovering':            '#E6E0D1',
+  'IfcSpace':               '#3399FF',
+};
+
+function ifcColor(type) {
+  return IFC_COLORS[type] || '#A0A0A8';
+}
+
+// ════════════════════════════════════════════════════════════════
+// THREE.JS SCENE SETUP
+// ════════════════════════════════════════════════════════════════
+const canvas    = document.getElementById('canvas');
+const viewport  = document.getElementById('viewport');
+const renderer  = new THREE.WebGLRenderer({ canvas, antialias:true, alpha:false });
+renderer.setPixelRatio(window.devicePixelRatio);
+renderer.shadowMap.enabled = true;
+renderer.shadowMap.type = THREE.PCFSoftShadowMap;
+renderer.outputEncoding = THREE.sRGBEncoding;
+renderer.toneMapping = THREE.ACESFilmicToneMapping;
+renderer.toneMappingExposure = 1.1;
+
+const scene  = new THREE.Scene();
+scene.background = new THREE.Color(0x050a11);
+scene.fog = new THREE.FogExp2(0x050a11, 0.002);
+
+const camera = new THREE.PerspectiveCamera(55, 1, 0.1, 5000);
+camera.position.set(50, 40, 80);
+
+// Lighting
+const ambLight = new THREE.AmbientLight(0x8090b0, 0.6);
+scene.add(ambLight);
+
+const sunLight = new THREE.DirectionalLight(0xfff5e0, 1.2);
+sunLight.position.set(80, 120, 60);
+sunLight.castShadow = true;
+scene.add(sunLight);
+
+const fillLight = new THREE.DirectionalLight(0x4080ff, 0.4);
+fillLight.position.set(-60, 30, -80);
+scene.add(fillLight);
+
+// Grid
+const gridHelper = new THREE.GridHelper(400, 80, 0x1a2535, 0x111a26);
+scene.add(gridHelper);
+
+// OrbitControls
+const controls = new THREE.OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+controls.dampingFactor = 0.06;
+controls.screenSpacePanning = true;
+
+// ════════════════════════════════════════════════════════════════
+// APPLICATION STATE
+// ════════════════════════════════════════════════════════════════
+let modelGroup = null;
+let meshList   = [];            // {mesh, ifcType, storey}
+let wallMeshes = [];            // Wall meshes for physical collision
+let axisFix    = true;
+
+// Navigation Graph State
+let navGraph = { nodes: [], edges: [] };
+let nodeMap  = new Map();       // id -> node object
+let graph3DGroup = new THREE.Group();
+scene.add(graph3DGroup);
+
+let nodesGroup  = new THREE.Group();
+let edgesGroup  = new THREE.Group();
+let routeGroup  = new THREE.Group();
+graph3DGroup.add(nodesGroup, edgesGroup, routeGroup);
+
+let activeRoute = null;
+let followRouteActive = false;
+let followRouteIndex  = 0;
+let followRouteProgress = 0;
+
+// Graph Editor State
+let editMode = false;
+let selectedNodeId = null;
+let secondSelectedNodeId = null;
+
+// Walk Mode & Collision State
+let walkMode   = false;
+const keys     = {};
+let yaw        = 0;
+let pitch      = 0;
+const WALK_SPEED = 0.25;
+const AVATAR_RADIUS = 0.35;     // Collision radius in metres
+
+// ════════════════════════════════════════════════════════════════
+// COORDINATE TRANSFORMATION
+// ════════════════════════════════════════════════════════════════
+function ifcToScene(x, y, z) {
+  // IFC: (x, y, z=up). GLB Y-up convention: (x, z, -y).
+  if (!modelGroup) {
+    return new THREE.Vector3(x, z, -y);
+  }
+  return new THREE.Vector3(
+    x + modelGroup.position.x,
+    z + modelGroup.position.y,
+    -y + modelGroup.position.z
+  );
+}
+
+function sceneToIfc(scenePt) {
+  if (!modelGroup) {
+    return { x: scenePt.x, y: -scenePt.z, z: scenePt.y };
+  }
+  return {
+    x: scenePt.x - modelGroup.position.x,
+    y: -(scenePt.z - modelGroup.position.z),
+    z: scenePt.y - modelGroup.position.y,
+  };
+}
+
+// ════════════════════════════════════════════════════════════════
+// RESIZE
+// ════════════════════════════════════════════════════════════════
+function resize() {
+  const w = viewport.clientWidth;
+  const h = viewport.clientHeight;
+  renderer.setSize(w, h, false);
+  camera.aspect = w / h;
+  camera.updateProjectionMatrix();
+}
+new ResizeObserver(resize).observe(viewport);
+resize();
+
+// ════════════════════════════════════════════════════════════════
+// FILE DRAG & DROP & LOADING
+// ════════════════════════════════════════════════════════════════
+const dropOverlay = document.getElementById('drop-overlay');
+
+viewport.addEventListener('dragover', e => { e.preventDefault(); dropOverlay.classList.add('drag-active'); });
+viewport.addEventListener('dragleave', () => dropOverlay.classList.remove('drag-active'));
+viewport.addEventListener('drop', e => {
+  e.preventDefault();
+  dropOverlay.classList.remove('drag-active');
+  const file = e.dataTransfer.files[0];
+  if (file) loadFile(file);
+});
+
+function handleFileInput(input) {
+  if (input.files[0]) loadFile(input.files[0]);
+  input.value = '';
+}
+
+function loadFile(file) {
+  const ext = file.name.split('.').pop().toLowerCase();
+  const url = URL.createObjectURL(file);
+
+  if (ext === 'json') {
+    loadGraphJSON(file);
+    return;
+  }
+
+  showLoading(true);
+  if (modelGroup) {
+    scene.remove(modelGroup);
+    modelGroup = null;
+    meshList = [];
+    wallMeshes = [];
+  }
+
+  document.getElementById('filename').textContent = file.name;
+
+  if (ext === 'obj') {
+    const tag = document.getElementById('schema-tag');
+    tag.className = 'tag tag-ifc'; tag.textContent = 'OBJ / IFC'; tag.style.display = '';
+    loadOBJ(url, file.name);
+  } else if (ext === 'glb' || ext === 'gltf') {
+    const tag = document.getElementById('schema-tag');
+    tag.className = 'tag tag-glb'; tag.textContent = 'GLB'; tag.style.display = '';
+    loadGLB(url, file.name);
+  } else {
+    showLoading(false);
+    alert('Unsupported format. Drop a .glb, .obj, or nav_graph.json');
+  }
+}
+
+function loadGLB(url, name) {
+  const loader = new THREE.GLTFLoader();
+  loader.load(url, gltf => {
+    const obj = gltf.scene;
+    obj.traverse(child => {
+      if (!child.isMesh) return;
+      const rawName = child.name || child.parent?.name || '';
+      const ifcType = rawName.split('__')[0]?.startsWith('Ifc') ? rawName.split('__')[0] : 'Unknown';
+      child.material.side = THREE.DoubleSide;
+      child.castShadow = true;
+      child.receiveShadow = true;
+      meshList.push({ mesh: child, ifcType, storey: 'Model' });
+      if (ifcType.includes('Wall')) wallMeshes.push(child);
+    });
+    onModelLoaded(obj, name);
+  }, null, err => {
+    showLoading(false);
+    alert('Error loading GLB: ' + err.message);
+  });
+}
+
+function loadOBJ(url, name) {
+  const loader = new THREE.OBJLoader();
+  loader.load(url, obj => {
+    obj.traverse(child => {
+      if (!child.isMesh) return;
+      const parts = child.name.split('__');
+      const storey = (parts[0] || 'Storey').replace(/_/g, ' ');
+      const ifcType = parts[1] || 'IfcWall';
+      child.material = new THREE.MeshPhongMaterial({ color: new THREE.Color(ifcColor(ifcType)), side: THREE.DoubleSide });
+      meshList.push({ mesh: child, ifcType, storey });
+      if (ifcType.includes('Wall')) wallMeshes.push(child);
+    });
+    onModelLoaded(obj, name);
+  });
+}
+
+function onModelLoaded(obj, name) {
+  modelGroup = obj;
+  scene.add(modelGroup);
+
+  const box = new THREE.Box3().setFromObject(modelGroup);
+  const center = box.getCenter(new THREE.Vector3());
+  modelGroup.position.set(-center.x, -box.min.y, -center.z);
+
+  resetCamera();
+  dropOverlay.classList.add('hidden');
+  showLoading(false);
+  document.getElementById('stat-elements').textContent = meshList.length;
+
+  // Re-render nav graph if already loaded to align coordinates
+  if (navGraph.nodes.length > 0) renderGraph3D();
+}
+
+// ════════════════════════════════════════════════════════════════
+// NAVIGATION GRAPH INGESTION & VISUALIZATION
+// ════════════════════════════════════════════════════════════════
+function loadGraphJSON(file) {
+  const reader = new FileReader();
+  reader.onload = e => {
+    try {
+      const data = JSON.parse(e.target.result);
+      processNavGraphData(data);
+      document.getElementById('graph-tag').style.display = '';
+      dropOverlay.classList.add('hidden');
+    } catch (err) {
+      alert('Invalid graph JSON: ' + err.message);
+    }
+  };
+  reader.readAsText(file);
+}
+
+function loadDefaultGraph() {
+  fetch('outputs/nav_graph.json')
+    .then(r => {
+      if (!r.ok) throw new Error('outputs/nav_graph.json not found on server');
+      return r.json();
+    })
+    .then(data => {
+      processNavGraphData(data);
+      document.getElementById('graph-tag').style.display = '';
+      dropOverlay.classList.add('hidden');
+    })
+    .catch(err => {
+      // Prompt user to open file if fetch fails (e.g. running from file:// protocol)
+      document.getElementById('file-input').click();
+    });
+}
+
+function processNavGraphData(data) {
+  navGraph = {
+    nodes: data.nodes || [],
+    edges: data.edges || [],
+  };
+  nodeMap.clear();
+  navGraph.nodes.forEach(n => nodeMap.set(n.id, n));
+
+  document.getElementById('stat-nodes').textContent = navGraph.nodes.length;
+  document.getElementById('stat-edges').textContent = navGraph.edges.length;
+
+  populateSelectors();
+  renderGraph3D();
+}
+
+function populateSelectors() {
+  const startSelect = document.getElementById('route-start-select');
+  const destSelect  = document.getElementById('route-dest-select');
+  const floorSelect = document.getElementById('floor-filter-select');
+
+  startSelect.innerHTML = '<option value="">-- Select Start Space --</option>';
+  destSelect.innerHTML  = '<option value="">-- Select Destination Space --</option>';
+  floorSelect.innerHTML = '<option value="all">All Floors</option>';
+
+  const floors = new Set();
+  const sortedNodes = [...navGraph.nodes].sort((a,b) => (a.name || a.id).localeCompare(b.name || b.id));
+
+  sortedNodes.forEach(n => {
+    floors.add(n.floor || 1);
+    const opt1 = document.createElement('option');
+    opt1.value = n.id;
+    opt1.textContent = `[F${n.floor}] ${n.name || n.id} (${n.type})`;
+    const opt2 = opt1.cloneNode(true);
+
+    startSelect.appendChild(opt1);
+    destSelect.appendChild(opt2);
+  });
+
+  [...floors].sort((a,b) => a - b).forEach(f => {
+    const fopt = document.createElement('option');
+    fopt.value = f;
+    fopt.textContent = `Floor ${f}`;
+    floorSelect.appendChild(fopt);
+  });
+  document.getElementById('stat-storeys').textContent = floors.size;
+}
+
+// Render 3D navigation nodes & edges
+function renderGraph3D() {
+  while (nodesGroup.children.length) nodesGroup.remove(nodesGroup.children[0]);
+  while (edgesGroup.children.length) edgesGroup.remove(edgesGroup.children[0]);
+
+  // Geometries for node types
+  const geomCorridor = new THREE.SphereGeometry(0.22, 12, 12);
+  const geomRoom     = new THREE.BoxGeometry(0.35, 0.35, 0.35);
+  const geomDoor     = new THREE.TorusGeometry(0.26, 0.06, 8, 16);
+  const geomStair    = new THREE.ConeGeometry(0.25, 0.45, 4);
+  const geomElevator = new THREE.CylinderGeometry(0.22, 0.22, 0.5, 12);
+  const geomJunction = new THREE.OctahedronGeometry(0.25);
+
+  const matCorridor = new THREE.MeshBasicMaterial({ color: 0x00c8ff });
+  const matRoom     = new THREE.MeshBasicMaterial({ color: 0x3b82f6 });
+  const matDoor     = new THREE.MeshBasicMaterial({ color: 0xf97316 });
+  const matStair    = new THREE.MeshBasicMaterial({ color: 0xeab308 });
+  const matElevator = new THREE.MeshBasicMaterial({ color: 0xa855f7 });
+  const matJunction = new THREE.MeshBasicMaterial({ color: 0xf59e0b });
+
+  navGraph.nodes.forEach(n => {
+    let geom = geomCorridor, mat = matCorridor;
+    if (n.type === 'room') { geom = geomRoom; mat = matRoom; }
+    else if (n.type === 'door' || n.type === 'gate') { geom = geomDoor; mat = matDoor; }
+    else if (n.type === 'stair') { geom = geomStair; mat = matStair; }
+    else if (n.type === 'elevator') { geom = geomElevator; mat = matElevator; }
+    else if (n.type === 'junction') { geom = geomJunction; mat = matJunction; }
+
+    const mesh = new THREE.Mesh(geom, mat);
+    const pos = ifcToScene(n.x, n.y, n.z);
+    mesh.position.copy(pos);
+    mesh.userData = { nodeId: n.id, nodeData: n };
+    nodesGroup.add(mesh);
+  });
+
+  // Render Edges
+  const edgeMatWalk = new THREE.LineBasicMaterial({ color: 0x00c8ff, opacity: 0.35, transparent: true });
+  const edgeMatDoor = new THREE.LineBasicMaterial({ color: 0xf97316, opacity: 0.7, transparent: true, linewidth: 2 });
+  const edgeMatVert = new THREE.LineBasicMaterial({ color: 0xeab308, opacity: 0.85, transparent: true, linewidth: 2 });
+
+  navGraph.edges.forEach(e => {
+    const fromN = nodeMap.get(e.from);
+    const toN   = nodeMap.get(e.to);
+    if (!fromN || !toN) return;
+
+    const p1 = ifcToScene(fromN.x, fromN.y, fromN.z);
+    const p2 = ifcToScene(toN.x, toN.y, toN.z);
+
+    const geo = new THREE.BufferGeometry().setFromPoints([p1, p2]);
+    let mat = edgeMatWalk;
+    if (e.type === 'door') mat = edgeMatDoor;
+    else if (e.type === 'stair' || e.type === 'elevator') mat = edgeMatVert;
+
+    const line = new THREE.Line(geo, mat);
+    line.userData = { fromFloor: fromN.floor, toFloor: toN.floor, edgeType: e.type };
+    edgesGroup.add(line);
+  });
+}
+
+// ════════════════════════════════════════════════════════════════
+// CLIENT-SIDE A* ROUTE CALCULATION
+// ════════════════════════════════════════════════════════════════
+function calculateRoute() {
+  const startId = document.getElementById('route-start-select').value;
+  const destId  = document.getElementById('route-dest-select').value;
+
+  if (!startId || !destId) {
+    alert('Please select both a Start space and Destination space.');
+    return;
+  }
+  if (startId === destId) {
+    alert('Start and destination must be different.');
+    return;
+  }
+
+  // Build adjacency graph for A*
+  const adj = new Map();
+  navGraph.nodes.forEach(n => adj.set(n.id, []));
+  navGraph.edges.forEach(e => {
+    if (adj.has(e.from) && adj.has(e.to)) {
+      const w = e.weight || e.distance_m || 1.0;
+      adj.get(e.from).push({ neighbor: e.to, weight: w, type: e.type });
+      adj.get(e.to).push({ neighbor: e.from, weight: w, type: e.type });
+    }
+  });
+
+  const destNode = nodeMap.get(destId);
+  function heuristic(nodeId) {
+    const n = nodeMap.get(nodeId);
+    const d = Math.hypot(n.x - destNode.x, n.y - destNode.y, n.z - destNode.z);
+    const fPenalty = Math.abs((n.floor || 1) - (destNode.floor || 1)) * 3.5;
+    return d + fPenalty;
+  }
+
+  // Priority Queue / Open Set
+  const openSet = [startId];
+  const cameFrom = new Map();
+  const gScore = new Map();
+  const fScore = new Map();
+
+  navGraph.nodes.forEach(n => {
+    gScore.set(n.id, Infinity);
+    fScore.set(n.id, Infinity);
+  });
+
+  gScore.set(startId, 0);
+  fScore.set(startId, heuristic(startId));
+
+  let found = false;
+
+  while (openSet.length > 0) {
+    // Find lowest fScore
+    openSet.sort((a,b) => fScore.get(a) - fScore.get(b));
+    const current = openSet.shift();
+
+    if (current === destId) {
+      found = true;
+      break;
+    }
+
+    const neighbors = adj.get(current) || [];
+    for (const edge of neighbors) {
+      const neighbor = edge.neighbor;
+      const tentativeG = gScore.get(current) + edge.weight;
+
+      if (tentativeG < gScore.get(neighbor)) {
+        cameFrom.set(neighbor, { prev: current, viaType: edge.type });
+        gScore.set(neighbor, tentativeG);
+        fScore.set(neighbor, tentativeG + heuristic(neighbor));
+        if (!openSet.includes(neighbor)) openSet.push(neighbor);
+      }
+    }
+  }
+
+  if (!found) {
+    alert('No physical path found between selected locations (isolated graph or barrier).');
+    return;
+  }
+
+  // Reconstruct path
+  const path = [destId];
+  let curr = destId;
+  while (cameFrom.has(curr)) {
+    const step = cameFrom.get(curr);
+    curr = step.prev;
+    path.unshift(curr);
+  }
+
+  activeRoute = path;
+  renderRoute3D(path);
+  displayRouteSummary(path);
+}
+
+function renderRoute3D(pathNodeIds) {
+  while (routeGroup.children.length) routeGroup.remove(routeGroup.children[0]);
+
+  const points = pathNodeIds.map(nid => {
+    const n = nodeMap.get(nid);
+    return ifcToScene(n.x, n.y, n.z + 0.15); // Slight elevation off ground
+  });
+
+  if (points.length < 2) return;
+
+  // Render glowing 3D tube for the path
+  const curve = new THREE.CatmullRomCurve3(points, false, 'catmullrom', 0.1);
+  const tubeGeo = new THREE.TubeGeometry(curve, points.length * 8, 0.12, 8, false);
+  const tubeMat = new THREE.MeshBasicMaterial({ color: 0x10b981, transparent: true, opacity: 0.88 });
+  const tubeMesh = new THREE.Mesh(tubeGeo, tubeMat);
+  routeGroup.add(tubeMesh);
+
+  // Markers at each step
+  points.forEach((pt, i) => {
+    const dotGeo = new THREE.SphereGeometry(0.18, 8, 8);
+    const dotMat = new THREE.MeshBasicMaterial({ color: i === 0 ? 0x00c8ff : (i === points.length-1 ? 0xf72585 : 0x10b981) });
+    const dot = new THREE.Mesh(dotGeo, dotMat);
+    dot.position.copy(pt);
+    routeGroup.add(dot);
+  });
+
+  document.getElementById('follow-route-btn').style.display = 'flex';
+  document.getElementById('clear-route-btn').style.display = 'flex';
+}
+
+function displayRouteSummary(pathNodeIds) {
+  let totalDist = 0;
+  const stepsContainer = document.getElementById('route-steps-container');
+  stepsContainer.innerHTML = '';
+
+  for (let i = 0; i < pathNodeIds.length; i++) {
+    const n = nodeMap.get(pathNodeIds[i]);
+    let dist = 0;
+    if (i < pathNodeIds.length - 1) {
+      const nxt = nodeMap.get(pathNodeIds[i+1]);
+      dist = Math.hypot(n.x - nxt.x, n.y - nxt.y, n.z - nxt.z);
+      totalDist += dist;
+    }
+
+    const item = document.createElement('div');
+    item.className = 'step-item';
+    item.innerHTML = `
+      <div class="step-badge">${i === 0 ? 'START' : (i === pathNodeIds.length-1 ? 'DEST' : (i+1))}</div>
+      <div class="step-desc">[F${n.floor}] ${n.name || n.id}</div>
+      <div class="step-dist">${dist > 0 ? dist.toFixed(1) + 'm' : ''}</div>
+    `;
+    stepsContainer.appendChild(item);
+  }
+
+  document.getElementById('metric-dist').textContent = totalDist.toFixed(1) + 'm';
+  document.getElementById('metric-eta').textContent = (totalDist / 1.2).toFixed(0) + 's';
+  document.getElementById('route-metrics').style.display = 'block';
+}
+
+function clearRoute() {
+  while (routeGroup.children.length) routeGroup.remove(routeGroup.children[0]);
+  activeRoute = null;
+  document.getElementById('route-metrics').style.display = 'none';
+  document.getElementById('follow-route-btn').style.display = 'none';
+  document.getElementById('clear-route-btn').style.display = 'none';
+  document.getElementById('follow-hud').style.display = 'none';
+  followRouteActive = false;
+}
+
+// ════════════════════════════════════════════════════════════════
+// FOLLOW ROUTE VIRTUAL NAVIGATION
+// ════════════════════════════════════════════════════════════════
+function toggleFollowRoute() {
+  if (followRouteActive) {
+    followRouteActive = false;
+    document.getElementById('follow-hud').style.display = 'none';
+    document.getElementById('follow-route-btn').classList.remove('active');
+  } else {
+    if (!activeRoute || activeRoute.length < 2) return;
+    followRouteActive = true;
+    followRouteIndex = 0;
+    followRouteProgress = 0;
+    document.getElementById('follow-hud').style.display = 'block';
+    document.getElementById('follow-route-btn').classList.add('active');
+  }
+}
+
+function updateFollowRoute(delta) {
+  if (!followRouteActive || !activeRoute || followRouteIndex >= activeRoute.length - 1) {
+    if (followRouteActive) {
+      document.getElementById('hud-instruction-text').textContent = "Destination Reached!";
+      setTimeout(() => { toggleFollowRoute(); }, 2000);
+    }
+    return;
+  }
+
+  const currNode = nodeMap.get(activeRoute[followRouteIndex]);
+  const nextNode = nodeMap.get(activeRoute[followRouteIndex + 1]);
+
+  const p1 = ifcToScene(currNode.x, currNode.y, currNode.z + 1.6);
+  const p2 = ifcToScene(nextNode.x, nextNode.y, nextNode.z + 1.6);
+
+  const segDist = p1.distanceTo(p2);
+  followRouteProgress += (delta * 2.0) / Math.max(segDist, 0.5);
+
+  if (followRouteProgress >= 1.0) {
+    followRouteIndex++;
+    followRouteProgress = 0;
+  }
+
+  const camPos = new THREE.Vector3().lerpVectors(p1, p2, Math.min(followRouteProgress, 1.0));
+  camera.position.copy(camPos);
+  controls.target.copy(p2);
+
+  // Update HUD
+  const instr = nextNode.type === 'door' ? `Pass through ${nextNode.name}` :
+               (nextNode.type === 'stair' ? `Ascend stair to Floor ${nextNode.floor}` :
+               `Proceed to ${nextNode.name}`);
+  document.getElementById('hud-instruction-text').textContent = instr;
+  document.getElementById('hud-sub-floor').textContent = `Floor ${currNode.floor}`;
+  const remainingNodes = activeRoute.length - 1 - followRouteIndex;
+  document.getElementById('hud-sub-dist').textContent = `${(remainingNodes * 2.5).toFixed(0)}m remaining`;
+}
+
+// ════════════════════════════════════════════════════════════════
+// LAYER TOGGLES & FLOOR FILTER
+// ════════════════════════════════════════════════════════════════
+function toggleGraphLayer(layer, visible) {
+  if (layer === 'nodes') nodesGroup.visible = visible;
+  else if (layer === 'edges') edgesGroup.visible = visible;
+  else if (layer === 'route') routeGroup.visible = visible;
+  else if (layer === 'walls') {
+    meshList.forEach(m => {
+      if (m.ifcType.includes('Wall')) m.mesh.visible = visible;
+    });
+  } else {
+    // Specific node types
+    nodesGroup.children.forEach(mesh => {
+      const nd = mesh.userData.nodeData;
+      if (layer === 'rooms' && nd.type === 'room') mesh.visible = visible;
+      if (layer === 'doors' && (nd.type === 'door' || nd.type === 'gate')) mesh.visible = visible;
+      if (layer === 'stairs' && (nd.type === 'stair' || nd.type === 'elevator')) mesh.visible = visible;
+    });
+  }
+}
+
+function filterFloorView(floorVal) {
+  const isAll = floorVal === 'all';
+  const targetFloor = parseInt(floorVal, 10);
+
+  // Filter nodes & edges
+  nodesGroup.children.forEach(mesh => {
+    mesh.visible = isAll || (mesh.userData.nodeData?.floor === targetFloor);
+  });
+  edgesGroup.children.forEach(line => {
+    line.visible = isAll || (line.userData.fromFloor === targetFloor && line.userData.toFloor === targetFloor);
+  });
+}
+
+// ════════════════════════════════════════════════════════════════
+// CONSTRAINED WALK MODE WITH WALL COLLISION
+// ════════════════════════════════════════════════════════════════
+function toggleWalkMode() {
+  if (walkMode) exitWalkMode();
+  else enterWalkMode();
+}
+
+function enterWalkMode() {
+  walkMode = true;
+  controls.enabled = false;
+
+  const dir = new THREE.Vector3();
+  camera.getWorldDirection(dir);
+  yaw = Math.atan2(dir.x, dir.z);
+  pitch = Math.asin(-dir.y);
+
+  renderer.domElement.requestPointerLock();
+  document.getElementById('walk-btn').classList.add('active');
+  document.getElementById('walk-overlay').style.display = 'block';
+  document.getElementById('crosshair').style.display = 'block';
+  document.getElementById('walk-label').style.display = 'block';
+}
+
+function exitWalkMode() {
+  walkMode = false;
+  controls.enabled = true;
+  document.exitPointerLock();
+
+  document.getElementById('walk-btn').classList.remove('active');
+  document.getElementById('walk-overlay').style.display = 'none';
+  document.getElementById('crosshair').style.display = 'none';
+  document.getElementById('walk-label').style.display = 'none';
+  document.getElementById('collision-indicator').style.display = 'none';
+}
+
+document.addEventListener('keydown', e => {
+  keys[e.code] = true;
+  if (e.code === 'KeyF') fitScene();
+  if (e.code === 'KeyG') toggleGrid();
+  if (e.code === 'Escape' && walkMode) exitWalkMode();
+});
+document.addEventListener('keyup', e => { keys[e.code] = false; });
+
+document.addEventListener('mousemove', e => {
+  if (!walkMode) return;
+  yaw   -= e.movementX * 0.0018;
+  pitch -= e.movementY * 0.0018;
+  pitch  = Math.max(-Math.PI / 2.2, Math.min(Math.PI / 2.2, pitch));
+});
+
+document.addEventListener('pointerlockchange', () => {
+  if (!document.pointerLockElement && walkMode) exitWalkMode();
+});
+
+// Wall collision raycaster
+const walkRaycaster = new THREE.Raycaster();
+const collisionAlert = document.getElementById('collision-indicator');
+
+function updateWalkCamera() {
+  if (!walkMode) return;
+
+  const forward = new THREE.Vector3(
+    Math.sin(yaw) * Math.cos(pitch),
+   -Math.sin(pitch),
+    Math.cos(yaw) * Math.cos(pitch)
+  );
+  const right = new THREE.Vector3(Math.cos(yaw), 0, -Math.sin(yaw));
+  const up    = new THREE.Vector3(0, 1, 0);
+
+  const move = new THREE.Vector3();
+  const spd  = keys['ShiftLeft'] || keys['ShiftRight'] ? WALK_SPEED * 2.5 : WALK_SPEED;
+
+  if (keys['KeyW'] || keys['ArrowUp'])    move.addScaledVector(forward,  spd);
+  if (keys['KeyS'] || keys['ArrowDown'])  move.addScaledVector(forward, -spd);
+  if (keys['KeyA'] || keys['ArrowLeft'])  move.addScaledVector(right,   -spd);
+  if (keys['KeyD'] || keys['ArrowRight']) move.addScaledVector(right,    spd);
+  if (keys['Space'])                      move.addScaledVector(up,        spd);
+  if (keys['KeyC'])                       move.addScaledVector(up,       -spd);
+
+  if (move.lengthSq() > 1e-6) {
+    const moveDir = move.clone().normalize();
+    const moveDist = move.length();
+
+    // Perform Wall Collision Test against physical walls
+    let blocked = false;
+    if (wallMeshes.length > 0) {
+      walkRaycaster.set(camera.position, moveDir);
+      walkRaycaster.far = moveDist + AVATAR_RADIUS;
+      const hits = walkRaycaster.intersectObjects(wallMeshes, false);
+      if (hits.length > 0 && hits[0].distance < moveDist + AVATAR_RADIUS) {
+        blocked = true;
+      }
+    }
+
+    if (blocked) {
+      // Movement blocked by wall barrier!
+      collisionAlert.style.display = 'block';
+    } else {
+      collisionAlert.style.display = 'none';
+      camera.position.add(move);
+    }
+  } else {
+    collisionAlert.style.display = 'none';
+  }
+
+  camera.lookAt(camera.position.clone().add(forward));
+}
+
+// ════════════════════════════════════════════════════════════════
+// GRAPH AUTHORING / EDITOR
+// ════════════════════════════════════════════════════════════════
+function toggleGraphEditor() {
+  editMode = !editMode;
+  const btn = document.getElementById('editor-toggle-btn');
+  const tools = document.getElementById('editor-tools');
+  if (editMode) {
+    btn.classList.add('active');
+    btn.textContent = 'Disable Edit Mode';
+    tools.style.display = 'block';
+  } else {
+    btn.classList.remove('active');
+    btn.textContent = 'Enable Edit Mode';
+    tools.style.display = 'none';
+    selectedNodeId = null;
+    document.getElementById('editor-selected-node').textContent = 'None';
+  }
+}
+
+viewport.addEventListener('click', e => {
+  if (!editMode || walkMode) return;
+
+  const rect = canvas.getBoundingClientRect();
+  const mouse = new THREE.Vector2(
+    ((e.clientX - rect.left) / rect.width) * 2 - 1,
+    -((e.clientY - rect.top) / rect.height) * 2 + 1
+  );
+
+  const ray = new THREE.Raycaster();
+  ray.setFromCamera(mouse, camera);
+
+  // Check if existing node was clicked
+  const nodeHits = ray.intersectObjects(nodesGroup.children);
+  if (nodeHits.length > 0) {
+    const hitNodeId = nodeHits[0].object.userData.nodeId;
+    if (!selectedNodeId) {
+      selectedNodeId = hitNodeId;
+    } else if (selectedNodeId !== hitNodeId) {
+      secondSelectedNodeId = hitNodeId;
+    }
+    document.getElementById('editor-selected-node').textContent =
+      secondSelectedNodeId ? `${selectedNodeId} & ${secondSelectedNodeId}` : selectedNodeId;
+    return;
+  }
+
+  // Clicked in space -> Add new node at surface intersection
+  const surfaceHits = ray.intersectObjects(meshList.map(m => m.mesh));
+  if (surfaceHits.length > 0) {
+    const pt = surfaceHits[0].point;
+    const ifcCoords = sceneToIfc(pt);
+    const ntype = document.getElementById('editor-node-type').value;
+    const newId = `node_edit_${Date.now().toString().slice(-6)}`;
+
+    const newNode = {
+      id: newId,
+      name: `Custom ${ntype} (${newId})`,
+      type: ntype,
+      floor: 1,
+      storey_id: 'Level 1',
+      space_id: '',
+      x: parseFloat(ifcCoords.x.toFixed(3)),
+      y: parseFloat(ifcCoords.y.toFixed(3)),
+      z: parseFloat(ifcCoords.z.toFixed(3)),
+      elevation: 0.0,
+      clearance_m: 0.3,
+    };
+
+    navGraph.nodes.push(newNode);
+    nodeMap.set(newId, newNode);
+    renderGraph3D();
+    populateSelectors();
+    selectedNodeId = newId;
+    document.getElementById('editor-selected-node').textContent = newId;
+  }
+});
+
+function editorConnectSelected() {
+  if (!selectedNodeId || !secondSelectedNodeId) {
+    alert('Select two nodes to connect.');
+    return;
+  }
+  const n1 = nodeMap.get(selectedNodeId);
+  const n2 = nodeMap.get(secondSelectedNodeId);
+  const dist = Math.hypot(n1.x - n2.x, n1.y - n2.y, n1.z - n2.z);
+
+  const newEdge = {
+    from: selectedNodeId,
+    to: secondSelectedNodeId,
+    type: 'walk',
+    distance_m: parseFloat(dist.toFixed(2)),
+    floor_from: n1.floor || 1,
+    floor_to: n2.floor || 1,
+    accessible: true,
+  };
+
+  navGraph.edges.push(newEdge);
+  renderGraph3D();
+  secondSelectedNodeId = null;
+  document.getElementById('editor-selected-node').textContent = selectedNodeId;
+}
+
+function editorDeleteSelected() {
+  if (!selectedNodeId) return;
+  navGraph.nodes = navGraph.nodes.filter(n => n.id !== selectedNodeId);
+  navGraph.edges = navGraph.edges.filter(e => e.from !== selectedNodeId && e.to !== selectedNodeId);
+  nodeMap.delete(selectedNodeId);
+  selectedNodeId = null;
+  secondSelectedNodeId = null;
+  document.getElementById('editor-selected-node').textContent = 'None';
+  renderGraph3D();
+  populateSelectors();
+}
+
+function exportEditedGraph() {
+  const payload = {
+    metadata: {
+      total_nodes: navGraph.nodes.length,
+      total_edges: navGraph.edges.length,
+      saved_at: new Date().toISOString(),
+    },
+    nodes: navGraph.nodes,
+    edges: navGraph.edges,
+  };
+  const blob = new Blob([JSON.stringify(payload, null, 2)], { type: 'application/json' });
+  const a = document.createElement('a');
+  a.href = URL.createObjectURL(blob);
+  a.download = 'navigation_graph.json';
+  a.click();
+}
+
+// ════════════════════════════════════════════════════════════════
+// VIEW CONTROLS & UTILITIES
+// ════════════════════════════════════════════════════════════════
+function setView(mode) {
+  if (!modelGroup) return;
+  const box  = new THREE.Box3().setFromObject(modelGroup);
+  const size = box.getSize(new THREE.Vector3());
+  const maxD = Math.max(size.x, size.y, size.z);
+
+  if (mode === 'top') {
+    camera.position.set(0, maxD * 2, 0);
+    controls.target.set(0, 0, 0);
+  } else if (mode === 'front') {
+    camera.position.set(0, size.y * 0.4, maxD * 1.6);
+    controls.target.set(0, size.y * 0.4, 0);
+  } else if (mode === 'iso') {
+    const d = maxD * 1.2;
+    camera.position.set(d, d * 0.7, d);
+    controls.target.set(0, size.y * 0.3, 0);
+  }
+  controls.update();
+}
+
+function resetCamera() {
+  if (!modelGroup) return;
+  const box  = new THREE.Box3().setFromObject(modelGroup);
+  const size = box.getSize(new THREE.Vector3());
+  const maxD = Math.max(size.x, size.y, size.z) * 1.6;
+  camera.position.set(maxD * 0.7, maxD * 0.5, maxD * 0.9);
+  controls.target.set(0, size.y * 0.3, 0);
+  controls.update();
+}
+
+function fitScene() { resetCamera(); }
+
+function toggleGrid() {
+  gridHelper.visible = !gridHelper.visible;
+}
+
+function toggleWireframe() {
+  meshList.forEach(m => { m.mesh.material.wireframe = !m.mesh.material.wireframe; });
+}
+
+let autoRotate = false;
+function toggleAutoRotate() {
+  autoRotate = !autoRotate;
+  controls.autoRotate = autoRotate;
+}
+
+function toggleAxisFix() {
+  axisFix = !axisFix;
+  if (modelGroup) {
+    modelGroup.rotation.x = axisFix ? -Math.PI / 2 : 0;
+    resetCamera();
+  }
+}
+
+function takeScreenshot() {
+  renderer.render(scene, camera);
+  const a = document.createElement('a');
+  a.download = 'indoornav_3d.png';
+  a.href = canvas.toDataURL('image/png');
+  a.click();
+}
+
+function showLoading(show) {
+  document.getElementById('loading-text').style.display = show ? 'block' : 'none';
+  document.getElementById('loading-bar-wrap').style.display = show ? 'block' : 'none';
+}
+
+// ════════════════════════════════════════════════════════════════
+// ANIMATION LOOP
+// ════════════════════════════════════════════════════════════════
+let clock = new THREE.Clock();
+let frameCount = 0, lastFpsTime = performance.now();
+const coordDisplay = document.getElementById('coord-display');
+
+function animate() {
+  requestAnimationFrame(animate);
+  const delta = clock.getDelta();
+
+  if (walkMode) updateWalkCamera();
+  else if (followRouteActive) updateFollowRoute(delta);
+  else controls.update();
+
+  renderer.render(scene, camera);
+
+  frameCount++;
+  const now = performance.now();
+  if (now - lastFpsTime >= 500) {
+    document.getElementById('fps-display').textContent =
+      (frameCount * 1000 / (now - lastFpsTime)).toFixed(0) + ' FPS';
+    frameCount = 0;
+    lastFpsTime = now;
+  }
+}
+animate();
+</script>
+</body>
+</html>

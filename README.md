@@ -44,16 +44,16 @@ The YOLO model (`yolov8n.pt`) is downloaded automatically the first time it is u
 
 ## Quick Start
 
-The repository includes `data/raw/Grethes-hus-bok-2.ifc` as an input example. Run the model pipeline headlessly:
+Place an IFC model in `data/raw/` (or pass its path directly) and run the model pipeline headlessly:
 
 ```powershell
-python src/main.py --input "data/raw/Grethes-hus-bok-2.ifc" --no-display
+python src/main.py --input "data/raw/building.ifc" --no-display
 ```
 
 To also build and validate the navigation graph, first install `networkx` and `shapely`, then run:
 
 ```powershell
-python src/main.py --input "data/raw/Grethes-hus-bok-2.ifc" --no-display --build-nav
+python src/main.py --input "data/raw/building.ifc" --no-display --build-nav
 ```
 
 By default, artifacts are written to `outputs/`. Use `--output-dir` to choose another directory. Without `--no-display`, the pipeline also opens the interactive PyVista window; it still saves the render either way.

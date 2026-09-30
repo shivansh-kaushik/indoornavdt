@@ -1,0 +1,6 @@
+ifcopenshell
+numpy
+trimesh[easy]
+pyvista
+pygltflib
+tqdm
